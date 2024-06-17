@@ -8,6 +8,7 @@ import {
 } from 'n8n-workflow';
 
 import { Midjourney as MidjourneyClient } from 'midjourney';
+import { bannedWords } from 'midjourney'
 import { pick } from 'lodash';
 
 const inputs: { [key: string]: INodeProperties } = {
@@ -69,6 +70,19 @@ const inputs: { [key: string]: INodeProperties } = {
 		placeholder: 'prompt',
 		description: 'The prompt to imagine',
 		required: true,
+	},
+	maxwait: {
+		displayName: 'MaxWait',
+		name: 'maxwait',
+		type: 'number',
+		default: 60,
+		displayOptions: {
+			show: {
+				action: ['imagine'],
+			},
+		},
+		placeholder: 'maxwait',
+		description: 'The maxwait invetval'
 	},
 	imageURI: {
 		displayName: 'Image URI',
@@ -182,23 +196,23 @@ const inputs: { [key: string]: INodeProperties } = {
 	},
 };
 
-export class Midjourney implements INodeType {
+export class Topjourney implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Midjourney',
-		name: 'midjourney',
+		displayName: 'Topjourney',
+		name: 'topjourney',
 		group: ['transform'],
-		icon: 'file:midjourney.svg',
+		icon: 'file:topjourney.svg',
 		version: 1,
 		description: 'AI to generate images',
 		defaults: {
-			name: 'Midjourney',
+			name: 'Topjourney',
 		},
 		subtitle: '={{$parameter["action"]}}',
 		inputs: ['main'],
 		outputs: ['main'],
 		credentials: [
 			{
-				name: 'midjourneyApi',
+				name: 'topjourneyApi',
 				required: true,
 			},
 		],
@@ -218,15 +232,28 @@ export class Midjourney implements INodeType {
 
 		let item: INodeExecutionData;
 
-		const credentials = await this.getCredentials('midjourneyApi');
+		const maxwait = this.getNodeParameter('maxwait', 0) as number || 60
+
+		const credentials = await this.getCredentials('topjourneyApi');
 		const client = new MidjourneyClient({
 			ServerId: <string>credentials.serverId,
 			ChannelId: <string>credentials.channelId,
 			SalaiToken: <string>credentials.salaiToken,
 			Debug: true,
-			Ws: true, //enable ws is required for remix mode (and custom zoom)
+			// Setup Max wait
+			MaxWait: maxwait,
+			// Disable for now
+			Ws: false, //enable ws is required for remix mode (and custom zoom)
 		});
-		await client.init();
+		const instance = await client.Connect();
+
+		// delay random
+		function randomIntFromInterval(min: number, max: number) { // min and max included
+			return Math.floor(Math.random() * (max - min + 1) + min);
+		}
+
+		const rndInt = randomIntFromInterval(100, 500);
+		await new Promise(resolve => setTimeout(resolve, rndInt));
 
 		// Iterates over all input items and add the key "myString" with the
 		// value the parameter "myString" resolves to.
@@ -239,7 +266,18 @@ export class Midjourney implements INodeType {
 				switch (action) {
 					case 'imagine': {
 						const prompt = this.getNodeParameter('prompt', itemIndex) as string;
-						const msg = await client.Imagine(prompt);
+
+						// Filter banned words
+						let fprompt = prompt
+						for (const word of bannedWords) {
+							fprompt = fprompt.replace(word, '')
+						}
+
+						const msg = await client.Imagine(fprompt);
+						if (!msg) {
+							throw Error('Could not imagine!')
+						}
+
 						item.json = pick(msg, ['id', 'hash', 'content', 'uri', 'flags', 'options']);
 						continue;
 					}
@@ -326,6 +364,11 @@ export class Midjourney implements INodeType {
 					throw new NodeOperationError(this.getNode(), error, {
 						itemIndex,
 					});
+				}
+			}
+			finally {
+				if (instance) {
+					instance.Close()
 				}
 			}
 		}

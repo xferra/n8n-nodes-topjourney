@@ -9,9 +9,9 @@ import {
 // export CHANNEL_ID="1094892992281718894"
 // export SALAI_TOKEN="your-discord-token"
 
-export class MidjourneyApi implements ICredentialType {
-	name = 'midjourneyApi';
-	displayName = 'Midjourney Credentials API';
+export class TopjourneyApi implements ICredentialType {
+	name = 'topjourneyApi';
+	displayName = 'Topjourney Credentials API';
 	properties: INodeProperties[] = [
 		// The credentials to get from user and save encrypted.
 		// Properties can be defined exactly in the same way
