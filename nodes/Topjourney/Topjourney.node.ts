@@ -10,6 +10,32 @@ import {
 import { Midjourney as MidjourneyClient } from 'midjourney';
 import { bannedWords } from 'midjourney'
 import { pick } from 'lodash';
+import * as console from "node:console";
+
+// todo move
+class TimeoutError extends Error {}
+
+export const addTimeout = <T>(
+	promise: Promise<T>,
+	timout: number,
+	timeoutMessage = 'timeout',
+): Promise<T> => {
+	let timer: NodeJS.Timeout | null;
+	const timerPromise = new Promise<T>((resolve, reject) => {
+		timer = setTimeout(() => {
+			timer = null;
+			reject(new TimeoutError(`${timeoutMessage} ${timout} ms`));
+		}, timout);
+	});
+
+	void promise.finally(() => {
+		if (timer) {
+			clearTimeout(timer);
+		}
+	});
+
+	return Promise.race([promise, timerPromise]);
+};
 
 const inputs: { [key: string]: INodeProperties } = {
 	action: {
@@ -42,6 +68,18 @@ const inputs: { [key: string]: INodeProperties } = {
 				value: 'upscale',
 				description: 'Upscale the selected image',
 				action: 'Upscale the selected image',
+			},
+			{
+				name: 'Upscale All',
+				value: 'upscale-all',
+				description: 'Upscale all images',
+				action: 'Upscale images',
+			},
+			{
+				name: 'To base64',
+				value: 'base64',
+				description: 'base64',
+				action: 'base64',
 			},
 			{
 				name: 'Variation',
@@ -84,6 +122,64 @@ const inputs: { [key: string]: INodeProperties } = {
 		placeholder: 'maxwait',
 		description: 'The maxwait invetval'
 	},
+	generationTimeout: {
+		displayName: 'Generation Timeout',
+		name: 'generationTimeout',
+		type: 'number',
+		displayOptions: {
+			show: {
+				action: ['imagine'],
+			},
+		},
+		description: 'Max generation timeout (seconds)',
+		placeholder: 'Max generation timeout (seconds)',
+		default: 60,
+		typeOptions: {
+			minValue: 1,
+		}
+	},
+	upscaleTimeout: {
+		displayName: 'Upscale Timeout',
+		name: 'upscaleTimeout',
+		type: 'number',
+		displayOptions: {
+			show: {
+				action: ['upscale', 'upscale-all'],
+			},
+		},
+		description: 'Max upscale timeout (seconds)',
+		placeholder: 'Max upscale timeout (seconds)',
+		default: 60,
+		typeOptions: {
+			minValue: 1,
+		}
+	},
+	content: {
+		displayName: 'content',
+		name: 'content',
+		type: 'string',
+		default: '',
+		displayOptions: {
+			show: {
+				action: ['upscale', 'upscale-all'],
+			},
+		},
+		placeholder: 'content',
+		required: true,
+	},
+	urls: {
+		displayName: 'urls',
+		name: 'urls',
+		type: 'json',
+		default: null,
+		displayOptions: {
+			show: {
+				action: ['base64'],
+			},
+		},
+		placeholder: 'urls',
+		required: true,
+	},
 	imageURI: {
 		displayName: 'Image URI',
 		name: 'imageURI',
@@ -104,7 +200,7 @@ const inputs: { [key: string]: INodeProperties } = {
 		default: '',
 		displayOptions: {
 			show: {
-				action: ['variation', 'upscale', 'zoomout', 'custom'],
+				action: ['variation', 'upscale', 'upscale-all', 'zoomout', 'custom'],
 			},
 		},
 		placeholder: 'msgId',
@@ -117,7 +213,7 @@ const inputs: { [key: string]: INodeProperties } = {
 		default: '',
 		displayOptions: {
 			show: {
-				action: ['variation', 'upscale', 'zoomout'],
+				action: ['variation', 'upscale', 'upscale-all', 'zoomout'],
 			},
 		},
 		placeholder: 'messageHash',
@@ -130,7 +226,7 @@ const inputs: { [key: string]: INodeProperties } = {
 		default: 0,
 		displayOptions: {
 			show: {
-				action: ['variation', 'upscale', 'zoomout', 'custom'],
+				action: ['variation', 'upscale', 'upscale-all', 'zoomout', 'custom'],
 			},
 		},
 		placeholder: 'messageFlags',
@@ -214,6 +310,11 @@ export class Topjourney implements INodeType {
 			{
 				name: 'topjourneyApi',
 				required: true,
+				displayOptions: {
+					show: {
+						action: ['variation', 'upscale', 'upscale-all', 'zoomout', 'custom', 'imagine'],
+					},
+				}
 			},
 		],
 		properties: [
@@ -230,9 +331,7 @@ export class Topjourney implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 
-		let item: INodeExecutionData;
-
-		const maxwait = this.getNodeParameter('maxwait', 0) as number || 60
+		const maxwait = this.getNodeParameter('maxwait', 0, 100) as number || 60
 
 		const credentials = await this.getCredentials('topjourneyApi');
 		const client = new MidjourneyClient({
@@ -242,6 +341,7 @@ export class Topjourney implements INodeType {
 			Debug: true,
 			// Setup Max wait
 			MaxWait: maxwait,
+			Limit: 100,
 			// Disable for now
 			Ws: false, //enable ws is required for remix mode (and custom zoom)
 		});
@@ -260,20 +360,19 @@ export class Topjourney implements INodeType {
 		// (This could be a different value for each item in case it contains an expression)
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
-				item = items[itemIndex];
+				let item: INodeExecutionData = items[itemIndex];
 
 				const action = this.getNodeParameter('action', itemIndex) as string;
 				switch (action) {
 					case 'imagine': {
-						const prompt = this.getNodeParameter('prompt', itemIndex) as string;
-
+						const generationTimeoutSeconds = this.getNodeParameter('generationTimeout', 0) as number || 60
 						// Filter banned words
-						let fprompt = prompt
+						let fprompt = this.getNodeParameter('prompt', itemIndex) as string;
 						for (const word of bannedWords) {
 							fprompt = fprompt.replace(word, '')
 						}
 
-						const msg = await client.Imagine(fprompt);
+						const msg = await addTimeout(instance.Imagine(fprompt), generationTimeoutSeconds * 1000);
 						if (!msg) {
 							throw Error('Could not imagine!')
 						}
@@ -304,13 +403,62 @@ export class Topjourney implements INodeType {
 						const msgId = this.getNodeParameter('msgId', itemIndex) as string;
 						const messageHash = this.getNodeParameter('messageHash', itemIndex) as string;
 						const messageFlags = this.getNodeParameter('messageFlags', itemIndex) as number;
-						const msg = await client.Upscale({
+						const upscaleTimeout = this.getNodeParameter('upscaleTimeout', itemIndex) as number;
+						const content = this.getNodeParameter('content', itemIndex) as string;
+						const msg = await addTimeout(client.Upscale({
 							index,
 							msgId,
 							hash: messageHash,
 							flags: messageFlags,
-						});
+							content,
+						}), upscaleTimeout * 1000);
 						item.json = pick(msg, ['id', 'hash', 'content', 'uri', 'flags', 'options']);
+						continue;
+					}
+					case 'upscale-all': {
+						const msgId = this.getNodeParameter('msgId', itemIndex) as string;
+						const messageHash = this.getNodeParameter('messageHash', itemIndex) as string;
+						const messageFlags = this.getNodeParameter('messageFlags', itemIndex) as number;
+						const upscaleTimeout = this.getNodeParameter('upscaleTimeout', itemIndex) as number;
+						const content = this.getNodeParameter('content', itemIndex) as string;
+
+						const result: Array<string> = [];
+
+						for (let index = 1; index <= 4; index++) {
+							try {
+								const msg = await addTimeout(client.Upscale({
+									index: index as 1 | 2 | 3 | 4,
+									msgId,
+									hash: messageHash,
+									content,
+									flags: messageFlags,
+								}), upscaleTimeout * 1000);
+
+								if (msg) {
+									result.push(msg.uri);
+								}
+							} catch (error) {
+								if (error instanceof TimeoutError) {
+									console.error(error);
+								} else {
+									throw error;
+								}
+							}
+						}
+
+						if (result.length === 0) {
+							throw new Error('No one upscale');
+						}
+						item.json = { result };
+						continue;
+					}
+					case 'base64': {
+						const urls = this.getNodeParameter('urls', itemIndex) as Array<string>;
+						const blobToBase64 = async (blob: Blob): Promise<string> => {
+							return `data:${blob.type};base64,${Buffer.from(await blob.arrayBuffer()).toString('base64')}`;
+						};
+						const base64Data = await Promise.all(urls.map(item => fetch(item).then(res => res.blob()).then(blobToBase64)));
+						item.json = { base64Data };
 						continue;
 					}
 					case 'variation': {
