@@ -36,50 +36,20 @@
     ]
   },
   "devDependencies": {
-    "@types/debug": "^4.1.5",
-    "@types/express": "^4.17.6",
-    "@types/extend": "^3.0.1",
-    "@types/jsonfile": "^6.0.0",
-    "@types/lodash": "^4.14.200",
-    "@types/lowlight": "^0.0.2",
-    "@types/mkdirp": "^1.0.1",
-    "@types/parse-color": "^1.0.0",
-    "@types/probe-image-size": "^7.0.0",
-    "@types/promise-retry": "^1.1.3",
-    "@types/request-promise-native": "^1.0.17",
-    "@types/sharp": "^0.32.0",
-    "@types/tmp": "^0.2.0",
-    "@types/turndown": "^5.0.4",
-    "@types/uuid": "^8.3.0",
+    "@types/lodash": "^4.17.5",
+    "@types/node": "^20.14.5",
     "@typescript-eslint/parser": "~5.45",
     "eslint-plugin-n8n-nodes-base": "^1.11.0",
-    "gulp": "^5.0.0",
-    "n8n-core": "*",
+    "gulp": "^4.0.2",
     "n8n-workflow": "*",
     "prettier": "^2.7.1",
     "typescript": "~4.8.4"
   },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
   "dependencies": {
-    "debug": "^4.1.1",
-    "extend": "^3.0.0",
-    "file-url": "^3.0.0",
-    "inline-styles-parse": "^1.2.0",
-    "jsonfile": "^6.0.1",
-    "lodash": "^4.17.11",
-    "midjourney": "^4.3.17",
-    "mime-types": "^2.1.22",
-    "mkdirp": "^1.0.4",
-    "native-css": "^1.2.5",
-    "node-fetch": "^2.3.0",
-    "opener": "^1.4.2",
-    "promise": "^8.0.3",
-    "promise-retry": "^2.0.1",
-    "request": "^2.88.0",
-    "request-promise-native": "^1.0.7",
-    "sharp": "^0.33.3",
-    "tmp": "0.2.1",
-    "tmp-promise": "^3.0.2",
-    "url": "^0.11.3",
-    "uuid": "^8.3.2"
+    "lodash": "^4.17.21",
+    "midjourney": "^4.3.17"
   }
 }
