@@ -310,11 +310,6 @@ export class Topjourney implements INodeType {
 			{
 				name: 'topjourneyApi',
 				required: true,
-				displayOptions: {
-					show: {
-						action: ['variation', 'upscale', 'upscale-all', 'zoomout', 'custom', 'imagine'],
-					},
-				}
 			},
 		],
 		properties: [
